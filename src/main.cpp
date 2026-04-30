@@ -1,57 +1,125 @@
 #include <Arduino.h>
-#include <PID_v1.h>
+#include <ESP32Servo.h>
 
-// --- PIN DEFINITIONS ---
-const int flexPins[5] = {34, 35, 32, 33, 25}; 
-const int motorPWM    = 18;  
-const int motorDir    = 19;  
+Servo servo20; //thumb
+Servo servo35; //4 fingers
 
-// --- PID VARIABLES ---
-double Setpoint, Input, Output;
-// For position control, we need a higher Kp to overcome the glove's resistance
-double Kp = 3.5, Ki = 1.2, Kd = 0.5; 
-// Change DIRECT to REVERSE if the motor pulls when it should release
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, REVERSE); 
+const int servo20Pin = 18;
+const int servo35Pin = 19;
+// Your specific 10 pins in order
+const int sensorPins[] = {36, 39, 34, 35, 32, 33, 25, 26, 27, 14};
+const int numSensors = 10;
 
-// --- TARGETS (Based on your HandSensors1.csv) ---
-// We will use the average of the 4 fingers on the Whiffletree
-const int NEUTRAL_TARGET = 820; 
+
+
+//Angles
+float homeAngle =90.0;
+float leftEnd = 20.0; //this should be adjusted to 0
+float rightEnd = 160.0;
+
+//PD gains
+float kProp = 2.0;
+float kDer = 0.3;
+
+//State
+float currentLeft = homeAngle;
+float currentRight= homeAngle;
+
+float targetLeft= homeAngle;
+float targetRight = homeAngle;
+
+float lastErrorLeft =0.0;
+float lastErrorRight = 0.0;
+
+unsigned long lastTime=0;
+
+//StateMachine (replaces delay)
+int state=0;
+unsigned long lastSwitch=0;
+
 
 void setup() {
-    Serial.begin(115200);
-    
-    pinMode(motorPWM, OUTPUT);
-    pinMode(motorDir, OUTPUT);
-    digitalWrite(motorDir, HIGH); 
+  Serial.begin(115200);
+  Serial.println("S1,S2,S3,S4,S5,S6,S7,S8,S9,S10");
+  delay(1000);
 
-    // Initialize PID
-    Setpoint = NEUTRAL_TARGET; 
-    myPID.SetMode(AUTOMATIC);
-    myPID.SetOutputLimits(0, 255); 
+  servo20.setPeriodHertz(50);
+  servo35.setPeriodHertz(50);
+
+  servo20.attach(servo20Pin, 500, 2500);
+  servo35.attach(servo35Pin, 500, 2500);
+
+  servo20.write(90);
+  servo35.write(90);
+  //Serial.println("Both servos centered");
+
+  //Init sensors   
+  // Initialize all pins as inputs
+  for (int i = 0; i < numSensors; i++) {
+    pinMode(sensorPins[i], INPUT);
+  }
+  
+  //Serial.println("Reading all 10 sensors... (36, 39, 34, 35, 32, 33, 25, 26, 27, 14)");
+  delay(1000);
+  lastTime = millis();
 }
 
 void loop() {
-    // 1. Read Flex Sensors (S2 to S5 are the fingers on the whiffletree)
-    float avgFlex = (analogRead(flexPins[1]) + analogRead(flexPins[2]) + 
-                     analogRead(flexPins[3]) + analogRead(flexPins[4])) / 4.0;
+
+    for (int i = 0; i < numSensors; i++) {
+        int val = analogRead(sensorPins[i]);
     
-    Input = avgFlex;
-
-    // 2. Compute PID
-    myPID.Compute();
-
-    // 3. Motor Execution
-    // If Input < Setpoint (Hand is flexing), Output increases to pull it back.
-    analogWrite(motorPWM, Output);
-
-    // 4. Monitoring
-    static long lastTime = 0;
-    if (millis() - lastTime > 100) {
-        Serial.print("CurrentPos:"); Serial.print(Input);
-        Serial.print(",");
-        Serial.print("Target:"); Serial.print(Setpoint);
-        Serial.print(",");
-        Serial.print("MotorPower:"); Serial.println(Output);
-        lastTime = millis();
+        // Print the value
+        Serial.print(val);
+    
+        // Add a tab or comma between numbers for readability
+        if (i < numSensors - 1) {
+        Serial.print(","); // Using tabs makes columns line up in Serial Monitor
+        }
     }
+  
+    Serial.println(); // Start a new line for the next set of readings
+    //delay(50);        // Fast enough for real-time feel, slow enough to read
+  
+    //Motor Testing
+    unsigned long now = millis();
+
+    // switch direction every 2 seconds
+    if (now - lastSwitch > 2000) {
+        lastSwitch = now;
+
+        if (state == 0) {
+            targetLeft = leftEnd;
+            targetRight = leftEnd;
+            state = 1;
+        } else {
+            targetLeft = rightEnd;
+            targetRight = rightEnd;
+            state = 0;
+        }
+    }
+    float dt = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    // LEFT SERVO
+    float errorLeft = targetLeft - currentLeft;
+    float dErrorLeft = (errorLeft - lastErrorLeft) / dt;
+    float outputLeft = kProp * errorLeft + kDer * dErrorLeft;
+
+    currentLeft += outputLeft * dt;
+    lastErrorLeft = errorLeft;
+
+    // RIGHT SERVO
+    float errorRight = targetRight - currentRight;
+    float dErrorRight = (errorRight - lastErrorRight) / dt;
+    float outputRight = kProp * errorRight + kDer * dErrorRight;
+
+    currentRight += outputRight * dt;
+    lastErrorRight = errorRight;
+
+    currentLeft = constrain(currentLeft, 0, 180);
+    currentRight = constrain(currentRight, 0, 180);
+    // write to servos
+    servo20.write(currentLeft);
+    servo35.write(currentRight);
 }
