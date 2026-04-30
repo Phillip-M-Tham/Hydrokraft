@@ -2,56 +2,68 @@
 #include <PID_v1.h>
 
 // --- PIN DEFINITIONS ---
-const int flexPins[5] = {34, 35, 32, 33, 25}; 
-const int motorPWM    = 18;  
-const int motorDir    = 19;  
+const int flexPins[5] = {34, 35, 32, 33, 25}; // S1 (Thumb), S2-S5 (Fingers)
+const int motor35kg = 18;  // Signal for 35kg motor
+const int motor20kg = 19;  // Signal for 20kg motor
 
-// --- PID VARIABLES ---
-double Setpoint, Input, Output;
-// For position control, we need a higher Kp to overcome the glove's resistance
-double Kp = 3.5, Ki = 1.2, Kd = 0.5; 
-// Change DIRECT to REVERSE if the motor pulls when it should release
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, REVERSE); 
+// --- PID 1: 35kg Motor (Main Fingers) ---
+double setpoint35, input35, output35;
+double Kp35 = 4.0, Ki35 = 0.5, Kd35 = 0.2; 
+PID pid35(&input35, &output35, &setpoint35, Kp35, Ki35, Kd35, DIRECT);
 
-// --- TARGETS (Based on your HandSensors1.csv) ---
-// We will use the average of the 4 fingers on the Whiffletree
-const int NEUTRAL_TARGET = 820; 
+// --- PID 2: 20kg Motor (Thumb) ---
+double setpoint20, input20, output20;
+double Kp20 = 3.0, Ki20 = 0.5, Kd20 = 0.1; 
+PID pid20(&input20, &output20, &setpoint20, Kp20, Ki20, Kd20, DIRECT);
+
+// --- NEUTRAL TARGETS (From your HandSensors1.csv data) ---
+const int FINGER_NEUTRAL = 820; // Average for S2-S5
+const int THUMB_NEUTRAL  = 770; // Value for S1
 
 void setup() {
     Serial.begin(115200);
-    
-    pinMode(motorPWM, OUTPUT);
-    pinMode(motorDir, OUTPUT);
-    digitalWrite(motorDir, HIGH); 
 
-    // Initialize PID
-    Setpoint = NEUTRAL_TARGET; 
-    myPID.SetMode(AUTOMATIC);
-    myPID.SetOutputLimits(0, 255); 
+    // Standard PWM setup for ESP32
+    pinMode(motor35kg, OUTPUT);
+    pinMode(motor20kg, OUTPUT);
+
+    // Initialize 35kg PID
+    setpoint35 = FINGER_NEUTRAL;
+    pid35.SetMode(AUTOMATIC);
+    pid35.SetOutputLimits(0, 255); 
+
+    // Initialize 20kg PID
+    setpoint20 = THUMB_NEUTRAL;
+    pid20.SetMode(AUTOMATIC);
+    pid20.SetOutputLimits(0, 255);
+
+    Serial.println("Dual Motor Control: Maintain Neutral Position Active");
 }
 
 void loop() {
-    // 1. Read Flex Sensors (S2 to S5 are the fingers on the whiffletree)
-    float avgFlex = (analogRead(flexPins[1]) + analogRead(flexPins[2]) + 
-                     analogRead(flexPins[3]) + analogRead(flexPins[4])) / 4.0;
-    
-    Input = avgFlex;
+    // 1. DATA COLLECTION
+    // Input for 35kg: Average of Index, Middle, Ring, Pinky (S2-S5)
+    input35 = (analogRead(flexPins[1]) + analogRead(flexPins[2]) + 
+               analogRead(flexPins[3]) + analogRead(flexPins[4])) / 4.0;
 
-    // 2. Compute PID
-    myPID.Compute();
+    // Input for 20kg: Thumb Flex (S1)
+    input20 = analogRead(flexPins[0]);
 
-    // 3. Motor Execution
-    // If Input < Setpoint (Hand is flexing), Output increases to pull it back.
-    analogWrite(motorPWM, Output);
+    // 2. COMPUTE PIDs
+    pid35.Compute();
+    pid20.Compute();
 
-    // 4. Monitoring
+    // 3. MOTOR EXECUTION (Individual PWM signals)
+    analogWrite(motor35kg, output35);
+    analogWrite(motor20kg, output20);
+
+    // 4. MONITORING
     static long lastTime = 0;
     if (millis() - lastTime > 100) {
-        Serial.print("CurrentPos:"); Serial.print(Input);
-        Serial.print(",");
-        Serial.print("Target:"); Serial.print(Setpoint);
-        Serial.print(",");
-        Serial.print("MotorPower:"); Serial.println(Output);
+        Serial.print("FingersFlex:"); Serial.print(input35);
+        Serial.print(" | 35kg_PWM:"); Serial.print(output35);
+        Serial.print(" || ThumbFlex:"); Serial.print(input20);
+        Serial.print(" | 20kg_PWM:"); Serial.println(output20);
         lastTime = millis();
     }
 }
