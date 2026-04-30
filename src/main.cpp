@@ -9,8 +9,8 @@ const int motor20kg = 19;  // Signal for 20kg motor
 
 // --- PID 1: 35kg Motor (Main Fingers) ---
 double setpoint35, input35, output35;
-double Kp35 = 7.0, Ki35 = 0.5, Kd35 = 0.2; 
-PID pid35(&input35, &output35, &setpoint35, Kp35, Ki35, Kd35, DIRECT);
+double Kp35 = 60.0, Ki35 = 0.5, Kd35 = 30.0; 
+PID pid35(&input35, &output35, &setpoint35, Kp35, Ki35, Kd35, REVERSE);
 
 // --- PID 2: 20kg Motor (Thumb) ---
 double setpoint20, input20, output20;
