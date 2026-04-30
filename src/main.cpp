@@ -117,8 +117,8 @@ void loop() {
     currentRight += outputRight * dt;
     lastErrorRight = errorRight;
 
-    currentLeft = constrain(currentLeft, 0, 180);
-    currentRight = constrain(currentRight, 0, 180);
+    currentLeft = constrain(currentLeft, 0, 90);
+    currentRight = constrain(currentRight, 0, 90);
     // write to servos
     servo20.write(currentLeft);
     servo35.write(currentRight);
